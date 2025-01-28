@@ -130,7 +130,7 @@ class SweTask(Task):
     def get_issue_statement(self) -> str:
         return self.problem_statement
 
-    def setup_project(self) -> None:
+    def setup_project(self, manual_do_install = True) -> None:
         # get the correct version of the project and commit-specific pip install
         task = self
         with apputils.cd(task.project_path):
@@ -143,7 +143,7 @@ class SweTask(Task):
             or config.only_save_sbfl_result
             or config.reproduce_and_review
         )
-        if do_install:
+        if do_install and manual_do_install:
             self._do_install()
 
         # commit the current changes, so that resetting later do not erase them

@@ -2,13 +2,15 @@
 Interfacing with OpenAI models.
 """
 
+USE_MANAGED_IDENTITY = True
+
 import json
 import os
 import sys
 from typing import Literal, cast
 
 from loguru import logger
-from openai import NOT_GIVEN, BadRequestError, OpenAI
+from openai import NOT_GIVEN, BadRequestError, OpenAI, AzureOpenAI
 from openai.types.chat import (
     ChatCompletion,
     ChatCompletionMessage,
@@ -27,7 +29,7 @@ from app.data_structures import FunctionCallIntent
 from app.log import log_and_print
 from app.model import common
 from app.model.common import Model
-
+from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 
 class OpenaiModel(Model):
     """
@@ -59,16 +61,69 @@ class OpenaiModel(Model):
         # because output token limit consumes part of the context window
         self.max_output_token = max_output_token
         # client for making request
-        self.client: OpenAI | None = None
+        self.client: AzureOpenAI | None = None
         self._initialized = True
+
+        if USE_MANAGED_IDENTITY:
+            self.name =  self.check_az_deployment()
+            self.max_output_token = 4096
+
+    # def setup(self) -> None:
+    #     """
+    #     Check API key, and initialize OpenAI client.
+    #     """
+    #     if self.client is None:
+    #         key = self.check_api_key()
+    #         self.client = OpenAI(api_key=key)
+
+    # def check_api_key(self) -> str:
+    #     key = os.getenv("OPENAI_KEY")
+    #     if not key:
+    #         print("Please set the OPENAI_KEY env var")
+    #         sys.exit(1)
+    #     return key
 
     def setup(self) -> None:
         """
         Check API key, and initialize OpenAI client.
         """
         if self.client is None:
-            key = self.check_api_key()
-            self.client = OpenAI(api_key=key)
+            # key = self.check_api_key()
+            # endpoint = self.check_endpoint_url()
+            # self.client = AzureOpenAI(
+            #     api_key=key, azure_endpoint=endpoint, api_version="2024-05-01-preview"
+            # )
+        
+            #use managed identity
+            # azure_managed_identity_client_id = self.check_ami_id()
+
+            if USE_MANAGED_IDENTITY:
+                endpoint = self.check_endpoint_url()
+                azure_managed_identity_client_id = None
+                if (azure_managed_identity_client_id is None):
+                    identity = DefaultAzureCredential()
+                else: 
+                    identity = DefaultAzureCredential(
+                managed_identity_client_id=azure_managed_identity_client_id
+                )
+                azure_token_provider = get_bearer_token_provider(
+                identity, 'https://cognitiveservices.azure.com/.default'
+                )
+                azure_token_provider()
+                self.client = AzureOpenAI(  
+                    azure_endpoint=endpoint,  
+                    azure_ad_token_provider=azure_token_provider,  
+                    api_version="2024-05-01-preview",  
+                ) 
+            else:
+                key = self.check_api_key()
+                self.client = OpenAI(api_key=key)
+    # def check_ami_id(self) -> str:
+    #     key = os.getenv("MANAGED_IDENTITY_ID")
+    #     if not key:
+    #         print("Please set the MANAGED_IDENTITY_ID env var")
+    #         sys.exit(1)
+    #     return key
 
     def check_api_key(self) -> str:
         key = os.getenv("OPENAI_KEY")
@@ -76,6 +131,21 @@ class OpenaiModel(Model):
             print("Please set the OPENAI_KEY env var")
             sys.exit(1)
         return key
+
+    def check_endpoint_url(self) -> str:
+        endpoint = os.getenv("ENDPOINT_URL")
+        if not endpoint:
+            print("Please set the ENDPOINT_URL env var")
+            sys.exit(1)
+        return endpoint
+
+    def check_az_deployment(self) -> str:
+        key = os.getenv("AZURE_DEPLOYMENT")
+        if not key:
+            print("Please set the AZURE_DEPLOYMENT env var")
+            sys.exit(1)
+        return key
+
 
     def extract_resp_content(
         self, chat_completion_message: ChatCompletionMessage
@@ -235,6 +305,7 @@ class OpenaiModel(Model):
             )
         except BadRequestError as e:
             logger.debug("BadRequestError ({}): messages={}", e.code, messages)
+            print(e)
             if e.code == "context_length_exceeded":
                 log_and_print("Context length exceeded")
             raise e

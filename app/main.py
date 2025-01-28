@@ -2,6 +2,9 @@
 The main driver.
 """
 
+ENV_SETUP = False
+
+
 import json
 import logging
 import platform
@@ -85,6 +88,7 @@ def main():
 
     # model related
     config.models = list(chain.from_iterable(args.model))
+    # print
     if not config.models:
         config.models.append("gpt-3.5-turbo-0125")
     common.set_model(config.models[0])
@@ -521,7 +525,7 @@ def run_raw_task(task: RawTask) -> bool:
 
 def evaluate_swe_issue_reproducers(raw_task: RawSweTask) -> None:
     swe_task = raw_task.to_task()
-    swe_task.setup_project()
+    swe_task.setup_project(ENV_SETUP)
 
     reproducer_files = glob(
         pjoin(
@@ -572,7 +576,7 @@ def do_inference(python_task: Task, task_output_dir: str) -> bool:
 
     start_time = datetime.now()
 
-    python_task.setup_project()
+    python_task.setup_project(ENV_SETUP)
 
     try:
         if config.only_save_sbfl_result:
@@ -597,7 +601,7 @@ def do_inference(python_task: Task, task_output_dir: str) -> bool:
                 )
 
                 # retry with backup model
-                python_task.setup_project()
+                python_task.setup_project(ENV_SETUP)
 
                 # remove everything other than the info.log file, and
                 # also some meta data file dumped by RawTask
